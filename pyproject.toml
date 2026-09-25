@@ -1,0 +1,22 @@
+[project]
+name = "personal-agent-from-scratch"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "CCliff8", email = "pepo.pietro68@gmail.com" }
+]
+requires-python = ">=3.9"
+dependencies = [
+    "anthropic>=0.125.0",
+    "apscheduler>=3.11.3",
+    "httpx>=0.28.1",
+    "python-dotenv>=1.2.1",
+]
+
+[project.scripts]
+personal-agent-from-scratch = "personal_agent_from_scratch:main"
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
