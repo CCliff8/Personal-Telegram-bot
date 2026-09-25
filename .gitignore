@@ -11,3 +11,6 @@ wheels/
 .venv/
 .env
 .DS_Store
+
+# Bot runtime state
+state.json
