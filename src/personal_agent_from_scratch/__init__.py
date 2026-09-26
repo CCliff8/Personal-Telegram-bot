@@ -29,6 +29,12 @@ def main() -> None:
         except Exception as e:
             client.send_message(brief_chat_id, f"Morning brief failed: {e}")
 
+    @router.register(lambda msg: msg.get("text", "").startswith("/brief"))
+    def handle_brief(message: dict, router) -> None:
+        send_morning_brief()
+
+    router.register(lambda msg: bool(msg.get("text")))(make_echo_handler(client))
+
     scheduler = BackgroundScheduler()
     scheduler.add_job(
         send_morning_brief,
