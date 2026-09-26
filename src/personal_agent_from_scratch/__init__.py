@@ -20,8 +20,6 @@ def main() -> None:
 
     client = TelegramClient(token)
     router = Router()
-    router.register(lambda msg: bool(msg.get("text")))(make_echo_handler(client))
-
     def send_morning_brief() -> None:
         try:
             text = morning_brief_run()
@@ -38,7 +36,7 @@ def main() -> None:
     scheduler = BackgroundScheduler()
     scheduler.add_job(
         send_morning_brief,
-        CronTrigger(hour=7, minute=0, timezone="Europe/Berlin"),
+        CronTrigger(hour=7, minute=0, timezone="Europe/Rome"),
     )
     scheduler.start()
     print("Bot running. Press Ctrl-C to stop.")

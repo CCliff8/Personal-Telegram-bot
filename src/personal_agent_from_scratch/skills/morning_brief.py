@@ -7,11 +7,11 @@ from googleapiclient.discovery import build
 
 from ..google_auth import get_credentials
 
-BERLIN = ZoneInfo("Europe/Berlin")
+MILAN = ZoneInfo("Europe/Rome")
 
 
 def _weather() -> str:
-    resp = httpx.get("https://wttr.in/Berlin?format=j1", timeout=10)
+    resp = httpx.get("https://wttr.in/Milan?format=j1", timeout=10)
     c = resp.json()["current_condition"][0]
     desc = c["weatherDesc"][0]["value"]
     temp = c["temp_C"]
@@ -22,7 +22,7 @@ def _weather() -> str:
 def _calendar() -> str:
     creds = get_credentials()
     svc = build("calendar", "v3", credentials=creds)
-    now = datetime.now(BERLIN)
+    now = datetime.now(MILAN)
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     day_end = now.replace(hour=23, minute=59, second=59, microsecond=0)
 
@@ -42,7 +42,7 @@ def _calendar() -> str:
     for e in events:
         start_raw = e["start"].get("dateTime", e["start"].get("date", ""))
         if "T" in start_raw:
-            t = datetime.fromisoformat(start_raw).astimezone(BERLIN).strftime("%H:%M")
+            t = datetime.fromisoformat(start_raw).astimezone(MILAN).strftime("%H:%M")
             lines.append(f"{t} {e['summary']}")
         else:
             lines.append(f"All day: {e['summary']}")
@@ -83,20 +83,24 @@ def run() -> str:
     try:
         calendar = _calendar()
     except Exception as e:
+        print(f"[calendar error] {e}")
         calendar = f"(unavailable: {e})"
 
     try:
         emails = _gmail()
     except Exception as e:
+        print(f"[gmail error] {e}")
         emails = f"(unavailable: {e})"
 
     prompt = (
-        "Write a brief morning summary. Be concise, max 200 words.\n\n"
-        f"WEATHER IN BERLIN: {weather}\n\n"
+        "Write a morning brief. Rules:\n"
+        "- No filler words, no encouragement, no sign-off\n"
+        "- Calendar and email: priority order (actionable/time-sensitive first, FYI last, omit if irrelevant)\n"
+        "- One line per item max\n"
+        "- 3 sections with emoji headers: ☀️ Weather, 📅 Calendar, 📧 Email\n\n"
+        f"WEATHER IN MILAN: {weather}\n\n"
         f"TODAY'S CALENDAR:\n{calendar}\n\n"
-        f"UNREAD EMAILS (last 24h):\n{emails}\n\n"
-        "Format: 3 short sections with emoji headers (☀️ Weather, 📅 Calendar, 📧 Email). "
-        "Conversational tone."
+        f"UNREAD EMAILS (last 24h):\n{emails}"
     )
 
     client = anthropic.Anthropic()
