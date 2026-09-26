@@ -10,6 +10,7 @@ from .router import Router
 from .handlers import make_echo_handler
 from .skills.morning_brief import run as morning_brief_run
 from .skills import evening_reflection as reflection
+from .skills.linkedin_draft import run as linkedin_run
 
 
 def main() -> None:
@@ -59,6 +60,19 @@ def main() -> None:
     def handle_reflection_input(message: dict, router) -> None:
         reflection.accumulate(router.state, message["text"])
 
+    # --- LinkedIn draft ---
+
+    def send_linkedin_draft() -> None:
+        try:
+            text = linkedin_run()
+            client.send_message(brief_chat_id, text)
+        except Exception as e:
+            client.send_message(brief_chat_id, f"LinkedIn draft failed: {e}")
+
+    @router.register(lambda msg: msg.get("text", "").startswith("/linkedin"))
+    def handle_linkedin(message: dict, router) -> None:
+        send_linkedin_draft()
+
     # --- Echo (catch-all) ---
 
     router.register(lambda msg: bool(msg.get("text")))(make_echo_handler(client))
@@ -73,6 +87,10 @@ def main() -> None:
     scheduler.add_job(
         send_reflection_prompt,
         CronTrigger(hour=21, minute=0, timezone="Europe/Rome"),
+    )
+    scheduler.add_job(
+        send_linkedin_draft,
+        CronTrigger(day_of_week="sun", hour=18, minute=0, timezone="Europe/Rome"),
     )
     scheduler.start()
     print("Bot running. Press Ctrl-C to stop.")

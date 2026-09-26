@@ -6,6 +6,7 @@ A single-process Telegram bot with long polling, a chat ID allowlist, and a skil
 
 - **Echo handler** — replies with whatever text you send
 - **Morning brief** (`/brief`) — daily summary of Milan weather, Google Calendar events, and unread Gmail, written by Claude Haiku. Fires automatically at 07:00 Milan time.
+- **Evening reflection** (`/reflect`) — bot prompts you with four questions; reply across one or more messages, send `/done` when finished. Claude Haiku structures your dump into a dated note saved to `reflections/YYYY-MM-DD.md`. Fires automatically at 21:00 Milan time. If you don't send `/done` within 5 minutes the session expires.
 
 ## Requirements
 
@@ -56,4 +57,4 @@ A browser window opens — log in and click Allow. This saves `token.json` local
 uv run personal-agent-from-scratch
 ```
 
-Send `/brief` to the bot on Telegram to trigger the morning brief on demand.
+Send `/brief` to trigger the morning brief on demand, `/reflect` to start an evening reflection session.
