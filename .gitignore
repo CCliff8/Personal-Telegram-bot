@@ -14,3 +14,5 @@ wheels/
 
 # Bot runtime state
 state.json
+credentials.json
+token.json
