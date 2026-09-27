@@ -48,10 +48,10 @@ Current handler order in `__init__.py`:
 8. Read accumulator (if read active) — collect notes
 9. `/chat` — start chat session (blocked if session active)
 10. Chat message handler (if chat active) — reply via Haiku
-11. `/linkedin` — generate LinkedIn draft on demand
+11. `/linkedin` — generate LinkedIn draft (blocked if session active)
 12. `/testme` — generate quiz question (blocked if session active)
 13. Quiz answer handler (if quiz active) — evaluate and reset
-14. `/remind` — schedule one-shot reminder (always available)
+14. `/remind` — schedule one-shot reminder (blocked if session active)
 
 Unrecognised messages that match no handler are silently ignored.
 
@@ -69,7 +69,7 @@ SESSION_KEYS = {
 }
 ```
 
-`_active_session(state)` returns the active command name or `None`. `_busy(chat_id)` calls it and sends a blocking message if a session is running. All session-starting handlers call `_busy()` before doing anything. `/exit` and `/remind` are exempt — `/exit` always clears, `/remind` is stateless.
+`_active_session(state)` returns the active command name or `None`. `_busy(chat_id)` calls it and sends a blocking message if a session is running. All command handlers call `_busy()` before doing anything. Only `/exit` and `/done` are exempt — `/exit` always clears state, `/done` is the valid way to finish a session.
 
 ## Command registry
 
