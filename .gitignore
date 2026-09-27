@@ -15,8 +15,9 @@ wheels/
 # Bot runtime state
 state.json
 
-# Reflection notes and drafts (personal, not for repo)
+# Personal content (not for repo)
 reflections/
 drafts/
+Notes/
 credentials.json
 token.json

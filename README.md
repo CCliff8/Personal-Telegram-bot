@@ -4,12 +4,14 @@ A single-process Telegram bot with long polling, a chat ID allowlist, and a skil
 
 ## Features
 
-- **Echo handler** — replies with whatever text you send
 - **Morning brief** (`/brief`) — daily summary of Milan weather, Google Calendar events, and unread Gmail, written by Claude Haiku. Fires automatically at 07:00 Milan time.
 - **Evening reflection** (`/reflect`) — bot prompts you with four questions; reply across one or more messages, send `/done` when finished. Claude Haiku structures your dump into a dated note saved to `reflections/YYYY-MM-DD.md`. Fires automatically at 21:00 Milan time. Session expires after 5 minutes without `/done`.
 - **LinkedIn draft** (`/linkedin`) — reads last 6 reflection files and generates a learn-in-public LinkedIn post saved to `drafts/YYYY-MM-DD.md`. Fires automatically every Sunday at 18:00 Milan time.
-- **Quiz** (`/testme <topic>`) — Haiku generates one question on the topic you specify, you answer, Haiku evaluates with brief feedback and suggests what to deep dive. One question per command, stateless.
-- **Exit** (`/exit`) — cancels any active session (reflection, quiz, or any future skill).
+- **Quiz** (`/testme <topic>`) — Haiku generates one question on the topic you specify, you answer, Haiku evaluates with brief feedback and suggests what to deep dive. One question per command.
+- **Reminders** (`/remind <message> in <time>`) — set one-shot reminders. Supports `m`, `h`, `d`. Lost on restart.
+- **Chat** (`/chat`) — multi-turn conversation with Claude Haiku. Loads `memory.md` as personal context. Send `/exit` to end.
+- **Reading notes** (`/read <title>`) — dump notes freely across messages, send `/done` to have Haiku structure them into Summary + Key Concepts and save to `Notes/<title>.md`.
+- **Mutual exclusion** — only one session-based command can be active at a time. `/exit` always cancels.
 
 ## Requirements
 
@@ -54,11 +56,17 @@ uv run personal-agent-auth
 
 A browser window opens — log in and click Allow. This saves `token.json` locally (auto-refreshes, never needed again).
 
-### 4. Run
+### 4. Fill in memory.md
+
+Edit `memory.md` at the project root with personal context (projects, goals, preferences). This is injected into every `/chat` session.
+
+### 5. Run
 
 ```bash
 uv run personal-agent-from-scratch
 ```
+
+On startup the bot sends a command list to Telegram. Unrecognised messages are silently ignored.
 
 ## Commands
 
@@ -66,7 +74,10 @@ uv run personal-agent-from-scratch
 |---|---|
 | `/brief` | Trigger morning brief on demand |
 | `/reflect` | Start evening reflection session |
-| `/done` | Finish and save reflection |
+| `/done` | Save and finish reflection or reading session |
 | `/linkedin` | Generate LinkedIn draft from last 6 reflections |
 | `/testme <topic>` | Get quizzed on any topic |
+| `/remind <message> in <time>` | Set a reminder (10m, 2h, 1d) |
+| `/chat` | Start a conversation with Haiku |
+| `/read <title>` | Start a reading note session |
 | `/exit` | Cancel any active session |
