@@ -14,8 +14,11 @@ src/personal_agent_from_scratch/
     skills/
         morning_brief.py      # Morning brief: weather + calendar + gmail + Haiku
         evening_reflection.py # Evening reflection: multi-turn input + Haiku structuring
+        linkedin_draft.py     # LinkedIn draft: reads reflections + Haiku + saves to drafts/
+        quiz.py               # Quiz: generate question + evaluate answer (stateless)
 
 reflections/                  # Saved reflection notes (gitignored, one .md per day)
+drafts/                       # Saved LinkedIn drafts (gitignored, one .md per week)
 ```
 
 ## How the polling loop works
@@ -31,11 +34,15 @@ Messages not in the `chat_id` allowlist are silently ignored.
 `Router` holds an ordered list of `(match_fn, handler_fn)` pairs. `dispatch()` walks the list and calls the first handler whose `match_fn` returns true. **Order matters** — more specific handlers must be registered before catch-all ones.
 
 Current handler order in `__init__.py`:
-1. `/brief` — morning brief on demand
-2. `/reflect` — start evening reflection session
-3. `/done` (only if reflection is active) — finish and save reflection
-4. Reflection accumulator (only if reflection is active) — collect messages
-5. Echo — catch-all
+1. `/exit` — clears all state, cancels any active session
+2. `/brief` — morning brief on demand
+3. `/reflect` — start evening reflection session
+4. `/done` (only if reflection is active) — finish and save reflection
+5. Reflection accumulator (only if reflection is active) — collect messages
+6. `/linkedin` — generate LinkedIn draft on demand
+7. `/testme <topic>` — generate quiz question, store in state
+8. Quiz answer handler (only if quiz is active) — evaluate answer, reset state
+9. Echo — catch-all
 
 `Router.state` is a plain dict persisted to `state.json` after each handled message. Skills use it to store conversation state across messages.
 
@@ -69,11 +76,38 @@ Flow:
 4. `/done` triggers `finish()`: concatenates messages → calls Haiku to structure → saves to `reflections/YYYY-MM-DD.md` → sends structured note back to Telegram → resets state
 5. If 5 minutes pass without `/done`, `is_active()` returns false and state is reset silently
 
-Expiry is checked on every incoming message via `is_active()`, which also cleans up state if expired.
-
 If the day's file already exists, the new reflection is appended with a `---` separator.
 
 Triggers: `21:00 Europe/Rome` (scheduled) or `/reflect` (on demand).
+
+## LinkedIn draft
+
+Pattern: **workflow**. Reads local files, calls Haiku, writes a file.
+
+1. `_load_last_reflections(6)` — reads the 6 most recent files from `reflections/`, sorted by filename (date)
+2. Builds a prompt with learn-in-public tone instructions + raw reflection content
+3. Calls Haiku, gets a structured LinkedIn post (hook → built → learned → hard → next → closing)
+4. Saves to `drafts/YYYY-MM-DD.md`, sends to Telegram
+
+Triggers: `Sunday 18:00 Europe/Rome` (scheduled) or `/linkedin` (on demand).
+
+## Quiz
+
+Pattern: **two-step stateful workflow**. Stateless from the user's perspective — each `/testme` is independent.
+
+State keys: `awaiting_quiz_answer`, `quiz_topic`, `quiz_question`.
+
+Flow:
+1. `/testme <topic>` → `generate_question(topic)` calls Haiku, stores question + topic in state, sends question to Telegram
+2. Next free-form message → `evaluate_answer(topic, question, answer)` calls Haiku, sends evaluation + deep-dive suggestion, clears state
+
+Haiku generates questions from its training data only — no internet access. Works well for established concepts (AI, Python, APIs, LLMs). Not reliable for very recent libraries or tools.
+
+Triggers: `/testme <topic>` only (not scheduled).
+
+## /exit
+
+Registered as the **first handler** in the router. Calls `router.state.clear()` — wipes all state regardless of which skill is active. Works for any future skill without modification.
 
 ## Scheduling
 
@@ -82,6 +116,7 @@ APScheduler's `BackgroundScheduler` runs in a background thread. The main thread
 Scheduled jobs:
 - `07:00 Europe/Rome` → morning brief
 - `21:00 Europe/Rome` → evening reflection prompt
+- `Sunday 18:00 Europe/Rome` → LinkedIn draft
 
 ## Google auth
 

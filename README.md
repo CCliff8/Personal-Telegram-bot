@@ -6,7 +6,10 @@ A single-process Telegram bot with long polling, a chat ID allowlist, and a skil
 
 - **Echo handler** — replies with whatever text you send
 - **Morning brief** (`/brief`) — daily summary of Milan weather, Google Calendar events, and unread Gmail, written by Claude Haiku. Fires automatically at 07:00 Milan time.
-- **Evening reflection** (`/reflect`) — bot prompts you with four questions; reply across one or more messages, send `/done` when finished. Claude Haiku structures your dump into a dated note saved to `reflections/YYYY-MM-DD.md`. Fires automatically at 21:00 Milan time. If you don't send `/done` within 5 minutes the session expires.
+- **Evening reflection** (`/reflect`) — bot prompts you with four questions; reply across one or more messages, send `/done` when finished. Claude Haiku structures your dump into a dated note saved to `reflections/YYYY-MM-DD.md`. Fires automatically at 21:00 Milan time. Session expires after 5 minutes without `/done`.
+- **LinkedIn draft** (`/linkedin`) — reads last 6 reflection files and generates a learn-in-public LinkedIn post saved to `drafts/YYYY-MM-DD.md`. Fires automatically every Sunday at 18:00 Milan time.
+- **Quiz** (`/testme <topic>`) — Haiku generates one question on the topic you specify, you answer, Haiku evaluates with brief feedback and suggests what to deep dive. One question per command, stateless.
+- **Exit** (`/exit`) — cancels any active session (reflection, quiz, or any future skill).
 
 ## Requirements
 
@@ -57,4 +60,13 @@ A browser window opens — log in and click Allow. This saves `token.json` local
 uv run personal-agent-from-scratch
 ```
 
-Send `/brief` to trigger the morning brief on demand, `/reflect` to start an evening reflection session.
+## Commands
+
+| Command | Description |
+|---|---|
+| `/brief` | Trigger morning brief on demand |
+| `/reflect` | Start evening reflection session |
+| `/done` | Finish and save reflection |
+| `/linkedin` | Generate LinkedIn draft from last 6 reflections |
+| `/testme <topic>` | Get quizzed on any topic |
+| `/exit` | Cancel any active session |

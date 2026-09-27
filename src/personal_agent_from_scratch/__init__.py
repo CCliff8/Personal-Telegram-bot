@@ -7,10 +7,10 @@ from dotenv import load_dotenv
 
 from .telegram import TelegramClient
 from .router import Router
-from .handlers import make_echo_handler
 from .skills.morning_brief import run as morning_brief_run
 from .skills import evening_reflection as reflection
 from .skills.linkedin_draft import run as linkedin_run
+from .skills import quiz
 
 
 def main() -> None:
@@ -31,6 +31,11 @@ def main() -> None:
             client.send_message(brief_chat_id, text)
         except Exception as e:
             client.send_message(brief_chat_id, f"Morning brief failed: {e}")
+
+    @router.register(lambda msg: msg.get("text", "").startswith("/exit"))
+    def handle_exit(message: dict, router) -> None:
+        router.state.clear()
+        client.send_message(message["chat"]["id"], "Cancelled.")
 
     @router.register(lambda msg: msg.get("text", "").startswith("/brief"))
     def handle_brief(message: dict, router) -> None:
@@ -73,9 +78,28 @@ def main() -> None:
     def handle_linkedin(message: dict, router) -> None:
         send_linkedin_draft()
 
-    # --- Echo (catch-all) ---
+    # --- Quiz ---
 
-    router.register(lambda msg: bool(msg.get("text")))(make_echo_handler(client))
+    @router.register(lambda msg: msg.get("text", "").lower().startswith("/testme"))
+    def handle_testme(message: dict, router) -> None:
+        parts = message["text"].split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            client.send_message(message["chat"]["id"], "Usage: /testme <topic>")
+            return
+        topic = parts[1].strip()
+        question = quiz.generate_question(topic)
+        router.state["awaiting_quiz_answer"] = True
+        router.state["quiz_topic"] = topic
+        router.state["quiz_question"] = question
+        client.send_message(message["chat"]["id"], question)
+
+    @router.register(lambda msg: router.state.get("awaiting_quiz_answer") and bool(msg.get("text")))
+    def handle_quiz_answer(message: dict, router) -> None:
+        topic = router.state.pop("quiz_topic", "")
+        question = router.state.pop("quiz_question", "")
+        router.state.pop("awaiting_quiz_answer", None)
+        evaluation = quiz.evaluate_answer(topic, question, message["text"])
+        client.send_message(message["chat"]["id"], evaluation)
 
     # --- Scheduler ---
 
@@ -94,6 +118,16 @@ def main() -> None:
     )
     scheduler.start()
     print("Bot running. Press Ctrl-C to stop.")
+
+    client.send_message(brief_chat_id, (
+        "Agent online.\n\n"
+        "/brief — morning brief (weather, calendar, email)\n"
+        "/reflect — start evening reflection\n"
+        "/done — save and finish reflection\n"
+        "/linkedin — generate LinkedIn draft from last 6 reflections\n"
+        "/testme <topic> — get quizzed on any topic\n"
+        "/exit — cancel any active session"
+    ))
 
     offset: Optional[int] = None
     try:
