@@ -1,11 +1,10 @@
 import os
-from datetime import datetime, timedelta
+import threading
 from typing import Optional
 
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
 
+from .startup import decode_google_credentials
 from .telegram import TelegramClient
 from .router import Router
 from .skills.morning_brief import run as morning_brief_run
@@ -43,6 +42,7 @@ def _active_session(state: dict) -> Optional[str]:
 
 def main() -> None:
     load_dotenv()
+    decode_google_credentials()
 
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     allowed_ids = {int(x.strip()) for x in os.environ["TELEGRAM_CHAT_ID"].split(",")}
@@ -218,25 +218,9 @@ def main() -> None:
         def fire() -> None:
             client.send_message(chat_id, f"Reminder: {reminder_text}")
 
-        scheduler.add_job(fire, "date", run_date=datetime.now() + timedelta(seconds=seconds))
+        threading.Timer(seconds, fire).start()
         client.send_message(chat_id, f"Reminder set for {label}.")
 
-    # --- Scheduler ---
-
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(
-        send_morning_brief,
-        CronTrigger(hour=7, minute=0, timezone="Europe/Rome"),
-    )
-    scheduler.add_job(
-        send_reflection_prompt,
-        CronTrigger(hour=21, minute=0, timezone="Europe/Rome"),
-    )
-    scheduler.add_job(
-        send_linkedin_draft,
-        CronTrigger(day_of_week="sun", hour=18, minute=0, timezone="Europe/Rome"),
-    )
-    scheduler.start()
     print("Bot running. Press Ctrl-C to stop.")
 
     client.send_message(brief_chat_id,
@@ -257,13 +241,10 @@ def main() -> None:
         while True:
             updates = client.get_updates(offset=offset)
             for update in updates:
-                # Advance the offset so Telegram drops this update from the queue.
-                # Setting offset = update_id + 1 is the acknowledgement mechanism.
                 offset = update["update_id"] + 1
                 msg = update.get("message")
                 if msg and msg["chat"]["id"] in allowed_ids:
                     router.dispatch(msg)
                     router.save_state()
     finally:
-        scheduler.shutdown()
         client.close()
