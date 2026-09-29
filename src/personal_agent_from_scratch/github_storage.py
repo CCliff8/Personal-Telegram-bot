@@ -16,7 +16,13 @@ def _headers() -> dict:
     }
 
 
+def _token_available() -> bool:
+    return bool(os.environ.get("DATA_REPO_TOKEN", "").strip())
+
+
 def read_file(path: str) -> Optional[bytes]:
+    if not _token_available():
+        return None
     resp = httpx.get(f"{API_BASE}/{path}", headers=_headers(), timeout=10)
     if resp.status_code == 404:
         return None
@@ -25,6 +31,8 @@ def read_file(path: str) -> Optional[bytes]:
 
 
 def write_file(path: str, content: bytes, message: str = "update") -> None:
+    if not _token_available():
+        return
     sha = None
     existing = httpx.get(f"{API_BASE}/{path}", headers=_headers(), timeout=10)
     if existing.status_code == 200:
