@@ -85,3 +85,8 @@ def _save(text: str) -> None:
         if path.stat().st_size > 0:
             f.write("\n\n---\n\n")
         f.write(text)
+    try:
+        from ..github_storage import write_file
+        write_file(f"reflections/{today}.md", path.read_bytes(), f"reflection {today}")
+    except Exception:
+        pass

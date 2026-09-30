@@ -3,6 +3,19 @@ import os
 from pathlib import Path
 
 
+def sync_data_from_repo() -> None:
+    """Pull reflections, drafts, and Notes from the private GitHub repo to local disk."""
+    from .github_storage import list_files, read_file
+    for folder in ("reflections", "drafts", "Notes"):
+        for remote_path in list_files(folder):
+            local_path = Path(remote_path)
+            if not local_path.exists():
+                local_path.parent.mkdir(parents=True, exist_ok=True)
+                data = read_file(remote_path)
+                if data:
+                    local_path.write_bytes(data)
+
+
 def decode_google_credentials() -> None:
     """
     On Railway, credentials.json and token.json are not on disk.

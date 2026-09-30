@@ -54,3 +54,8 @@ def _save(text: str) -> None:
     today = datetime.now(MILAN).strftime("%Y-%m-%d")
     path = DRAFTS_DIR / f"{today}.md"
     path.write_text(text)
+    try:
+        from ..github_storage import write_file
+        write_file(f"drafts/{today}.md", path.read_bytes(), f"linkedin draft {today}")
+    except Exception:
+        pass

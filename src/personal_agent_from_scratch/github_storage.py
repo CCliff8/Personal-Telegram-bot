@@ -30,6 +30,16 @@ def read_file(path: str) -> Optional[bytes]:
     return base64.b64decode(resp.json()["content"])
 
 
+def list_files(path: str) -> list:
+    if not _token_available():
+        return []
+    resp = httpx.get(f"{API_BASE}/{path}", headers=_headers(), timeout=10)
+    if resp.status_code == 404:
+        return []
+    resp.raise_for_status()
+    return [item["path"] for item in resp.json() if item["type"] == "file"]
+
+
 def write_file(path: str, content: bytes, message: str = "update") -> None:
     if not _token_available():
         return

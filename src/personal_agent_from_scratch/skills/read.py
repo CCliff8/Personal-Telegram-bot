@@ -42,3 +42,8 @@ def save(title: str, text: str) -> None:
             date = datetime.now(MILAN).strftime("%Y-%m-%d")
             f.write(f"\n\n---\n\n*Updated {date}*\n\n")
         f.write(text)
+    try:
+        from ..github_storage import write_file
+        write_file(f"Notes/{safe_title}.md", path.read_bytes(), f"note: {title}")
+    except Exception:
+        pass

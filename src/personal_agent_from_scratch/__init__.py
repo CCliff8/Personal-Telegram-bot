@@ -4,7 +4,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-from .startup import decode_google_credentials
+from .startup import decode_google_credentials, sync_data_from_repo
 from .telegram import TelegramClient
 from .router import Router
 from .skills.morning_brief import run as morning_brief_run
@@ -43,6 +43,7 @@ def _active_session(state: dict) -> Optional[str]:
 def main() -> None:
     load_dotenv()
     decode_google_credentials()
+    sync_data_from_repo()
 
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     allowed_ids = {int(x.strip()) for x in os.environ["TELEGRAM_CHAT_ID"].split(",")}
