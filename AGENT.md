@@ -1,65 +1,78 @@
 # Agent Architecture
 
-Personal reference for how this project is structured and why.
+Personal technical reference for how this project is structured and why.
+
+---
 
 ## File map
 
 ```
 src/personal_agent_from_scratch/
-    __init__.py               # Entry point: main(), polling loop, APScheduler, all handlers
+    __init__.py               # Entry point: main(), polling loop, all handler registrations
     telegram.py               # TelegramClient: get_updates() + send_message()
-    router.py                 # Router: match-based dispatch + state.json
+    router.py                 # Router: match-based dispatch + state.json persistence
     google_auth.py            # OAuth helpers: get_credentials() + run_auth()
+    github_storage.py         # Read/write files to private GitHub repo via REST API
+    startup.py                # Railway startup: decode credentials from env vars
     skills/
-        morning_brief.py      # Morning brief: weather + calendar + gmail + Haiku
-        evening_reflection.py # Evening reflection: multi-turn input + Haiku structuring
-        linkedin_draft.py     # LinkedIn draft: reads reflections + Haiku + saves to drafts/
-        quiz.py               # Quiz: generate question + evaluate answer (two-step stateful)
-        remind.py             # Reminder: parse delay string, schedule one-shot job
-        chat.py               # Chat: multi-turn Haiku conversation with memory.md context
-        read.py               # Reading notes: accumulate + Haiku structure + save to Notes/
+        morning_brief.py      # Weather + calendar + Gmail + Haiku
+        evening_reflection.py # Multi-turn input + Haiku structuring + save to reflections/
+        linkedin_draft.py     # Reads reflections/ + Haiku + saves to drafts/
+        quiz.py               # Generate question + evaluate answer (two Haiku calls)
+        remind.py             # Parse delay string, schedule one-shot threading.Timer
+        chat.py               # Multi-turn Haiku conversation with memory.md context
+        read.py               # Accumulate notes + Haiku structure + save to Notes/
 
-memory.md                     # Personal context injected into /chat (manual, not gitignored)
+memory.example.md             # Public template — copy to memory.md and fill in
+memory.md                     # Personal context injected into /chat (gitignored)
 reflections/                  # Saved reflection notes (gitignored, one .md per day)
 drafts/                       # Saved LinkedIn drafts (gitignored, one .md per week)
 Notes/                        # Saved reading notes (gitignored, one .md per title)
+railway.json                  # Railway start command config
+railpack.json                 # Railpack build config (start command)
+.python-version               # Pins Python 3.11 for Railway/mise
 ```
 
-## How the polling loop works
+---
 
-`main()` runs a `while True` that calls `getUpdates` on the Telegram API with `timeout=30` (long polling). Telegram holds the connection open up to 30 s if no messages arrive, then returns an empty list. When a message arrives it returns immediately.
+## Polling loop
 
-After each batch, `offset` is set to `last_update_id + 1`. This is sent on the next call and tells Telegram to drop all already-seen updates from the queue — it's the acknowledgement mechanism.
+`main()` runs a `while True` loop calling `getUpdates` on the Telegram Bot API with `timeout=30` (long polling). Telegram holds the connection open for up to 30 seconds if no messages arrive, then returns an empty list. When a message arrives it returns immediately.
 
-Messages not in the `chat_id` allowlist are silently ignored.
+After each batch, `offset` is set to `last_update_id + 1`. This is sent on the next call to tell Telegram to drop all already-acknowledged updates from the queue.
+
+Messages not in the `TELEGRAM_CHAT_ID` allowlist are silently ignored.
+
+---
 
 ## Router
 
-`Router` holds an ordered list of `(match_fn, handler_fn)` pairs. `dispatch()` walks the list and calls the first handler whose `match_fn` returns true. **Order matters** — more specific handlers must be registered before catch-all ones.
+`Router` holds an ordered list of `(match_fn, handler_fn)` pairs. `dispatch()` walks the list and calls the first handler whose `match_fn` returns `True`. **Order matters** — more specific handlers must be registered before broader ones.
 
-Current handler order in `__init__.py`:
+Handler order in `__init__.py`:
 1. `/exit` — clears all state, cancels any active session
 2. `/brief` — morning brief on demand
 3. `/reflect` — start evening reflection (blocked if session active)
 4. `/done` (reflection active) — finish and save reflection
-5. Reflection accumulator (if reflection active) — collect messages
+5. Reflection accumulator — collects messages while reflection is active
 6. `/read` — start reading session (blocked if session active)
 7. `/done` (read active) — structure, save, and send reading note
-8. Read accumulator (if read active) — collect notes
+8. Read accumulator — collects notes while read is active
 9. `/chat` — start chat session (blocked if session active)
-10. Chat message handler (if chat active) — reply via Haiku
+10. Chat message handler — reply via Haiku while chat is active
 11. `/linkedin` — generate LinkedIn draft (blocked if session active)
 12. `/testme` — generate quiz question (blocked if session active)
-13. Quiz answer handler (if quiz active) — evaluate and reset
+13. Quiz answer handler — evaluate and reset
 14. `/remind` — schedule one-shot reminder (blocked if session active)
 
-Unrecognised messages that match no handler are silently ignored.
-
 `Router.state` is a plain dict persisted to `state.json` after each handled message.
+
+---
 
 ## Session mutual exclusion
 
 `SESSION_KEYS` maps state keys to command names:
+
 ```python
 SESSION_KEYS = {
     "awaiting_reflection": "/reflect",
@@ -69,127 +82,131 @@ SESSION_KEYS = {
 }
 ```
 
-`_active_session(state)` returns the active command name or `None`. `_busy(chat_id)` calls it and sends a blocking message if a session is running. All command handlers call `_busy()` before doing anything. Only `/exit` and `/done` are exempt — `/exit` always clears state, `/done` is the valid way to finish a session.
+`_active_session(state)` returns the active command name or `None`. `_busy(chat_id)` calls it and sends a blocking message if a session is running. All command handlers call `_busy()` first. Only `/exit` and `/done` bypass this.
 
-## Command registry
+All session accumulators use `not _is_command(msg["text"])` in their match function so commands are never swallowed by an active session.
 
-`COMMANDS` is a set of all known command strings:
-```python
-COMMANDS = {
-    "/exit", "/brief", "/reflect", "/done", "/linkedin",
-    "/testme", "/remind", "/chat", "/read",
-}
-```
+**When adding a new command:** add it to `COMMANDS`, register handlers in order, and update the startup message string.
 
-`_is_command(text)` checks if the first word of a message is in `COMMANDS`. All session accumulators (reflection input, read input, chat messages, quiz answers) use `not _is_command(msg["text"])` in their match function — this ensures commands are never swallowed by an active session and always reach their handler.
-
-**When adding a new command:** add it to `COMMANDS` and update the startup message string.
+---
 
 ## Skills
 
-A skill is a callable that reads some data, optionally calls a model, and returns a result. Each skill is a **workflow**: steps are fixed and decided by the programmer, not the model.
+Each skill is a callable (or module with a small API) that reads data, optionally calls Claude Haiku (`claude-haiku-4-5-20251001`), and returns a result. Steps are fixed — the model only writes prose.
 
-## Morning brief
-
-Pattern: **workflow**. Fixed steps, model only writes prose.
+### Morning brief
 
 1. `_weather()` — GET `wttr.in/Milan?format=j1`, extract temp + description
 2. `_calendar()` — Google Calendar API, today's events in `Europe/Rome` timezone
-3. `_gmail()` — Gmail API, unread messages from last 24h (subject + sender only)
-4. Build a prompt, call Claude Haiku (`claude-haiku-4-5-20251001`), return the text
+3. `_gmail()` — Gmail API, unread messages from last 24 hours (subject + sender only)
+4. Build prompt → call Haiku → return text
 
-Each of steps 2 and 3 is wrapped in a try/except so a single failure doesn't break the whole brief.
+Steps 2 and 3 are wrapped in `try/except` so a single API failure doesn't break the whole brief.
 
-Triggers: `07:00 Europe/Rome` (scheduled) or `/brief` (on demand).
+### Evening reflection
 
-## Evening reflection
+State keys: `awaiting_reflection`, `reflection_expires_at`, `reflection_messages`
 
-Pattern: **multi-turn stateful workflow**.
-
-State keys: `awaiting_reflection`, `reflection_expires_at`, `reflection_messages`.
-
-Flow:
-1. Bot sends the 4-question prompt (scheduled or `/reflect`)
+1. `/reflect` → bot sends 4-question prompt → sets state
 2. Messages accumulate in `reflection_messages`
-3. `/done` → concatenate → Haiku structures → save to `reflections/YYYY-MM-DD.md` → send back → reset state
-4. Expires after 5 minutes if `/done` not sent
+3. `/done` → concatenate → Haiku structures → save to `reflections/YYYY-MM-DD.md` → reset state
+4. Session expires after 5 minutes if `/done` is never sent
 
-If the day's file already exists, new reflection is appended with `---`.
+If the day's file already exists, the new reflection is appended with `---`.
 
-Triggers: `21:00 Europe/Rome` (scheduled) or `/reflect` (on demand).
-
-## LinkedIn draft
-
-Pattern: **workflow**. Reads local files, calls Haiku, writes a file.
+### LinkedIn draft
 
 1. Load last 6 files from `reflections/` sorted by filename
 2. Call Haiku with learn-in-public prompt (hook → built → learned → hard → next → closing)
 3. Save to `drafts/YYYY-MM-DD.md`, send to Telegram
 
-Triggers: `Sunday 18:00 Europe/Rome` (scheduled) or `/linkedin` (on demand).
+### Quiz
 
-## Quiz
-
-Pattern: **two-step stateful workflow**.
-
-State keys: `awaiting_quiz_answer`, `quiz_topic`, `quiz_question`.
+State keys: `awaiting_quiz_answer`, `quiz_topic`, `quiz_question`
 
 1. `/testme <topic>` → `generate_question(topic)` → store in state → send question
-2. Next message → `evaluate_answer()` → send evaluation → clear state
+2. Next non-command message → `evaluate_answer()` → send evaluation → clear state
 
-Haiku uses training data only — no internet. Works well for established concepts.
+Haiku uses its training data — no internet access.
 
-Triggers: `/testme <topic>` only.
+### Reminders
 
-## Reminders
+`remind.parse()` splits on the last ` in ` in the message (handles "in" appearing in the reminder text), extracts the delay in `m`/`h`/`d`, returns `(message, seconds)`.
 
-Pattern: **stateless dynamic scheduling**. No session state.
+A `threading.Timer(seconds, fire)` is started in a background thread. Multiple reminders can coexist. All reminders are lost on process restart.
 
-`remind.parse()` splits on the last ` in ` (handles "in" appearing in message text), extracts delay in m/h/d, returns `(message, seconds)`. A one-shot APScheduler `"date"` job is created at runtime. Multiple reminders can coexist. Lost on restart.
+### Chat
 
-Triggers: `/remind <message> in <time>` only.
+State keys: `in_chat`, `chat_history`
 
-## Chat
+`memory.md` is loaded on every message and injected as the system prompt. The full session history (`chat_history`) is passed to Haiku each turn. `/exit` clears state and ends the session.
 
-Pattern: **multi-turn stateful conversation**.
+### Reading notes
 
-State keys: `in_chat`, `chat_history` (list of `{role, content}` dicts).
-
-`memory.md` is loaded on every message and injected as the system prompt. The entire session history is passed to Haiku each turn. `/exit` clears state and ends the session.
-
-Triggers: `/chat` only.
-
-## Reading notes
-
-Pattern: **multi-turn stateful workflow**.
-
-State keys: `read_title`, `read_messages`.
+State keys: `read_title`, `read_messages`
 
 1. `/read <title>` → store title, start accumulating
 2. Messages append to `read_messages`
-3. `/done` → concatenate → Haiku structures into Summary + Key Concepts (+ To Explore if mentioned) → save to `Notes/<title>.md` → send back → clear state
+3. `/done` → concatenate → Haiku structures into Summary + Key Concepts → save to `Notes/<title>.md` → clear state
 
-If the file already exists (same title), new content is appended with a date separator.
+If the file already exists (same title), content is appended with a date separator.
 
-Triggers: `/read <title>` only.
-
-## Startup message
-
-On launch, after the scheduler starts, the bot sends a full command list to `brief_chat_id` as confirmation it's online.
-
-## Scheduling
-
-APScheduler's `BackgroundScheduler` runs in a background thread. The main thread runs the blocking polling loop. On shutdown (`finally` block), the scheduler is stopped cleanly before the httpx client is closed.
-
-Scheduled jobs:
-- `07:00 Europe/Rome` → morning brief
-- `21:00 Europe/Rome` → evening reflection prompt
-- `Sunday 18:00 Europe/Rome` → LinkedIn draft
+---
 
 ## Google auth
 
-`get_credentials()` — loads `token.json`, refreshes if expired. Raises a clear error if `token.json` is missing.
+`get_credentials()` — loads `token.json`, refreshes if expired using the stored refresh token. After every refresh, the updated `token.json` is pushed to the private GitHub repo via `github_storage.write_file()` so the latest token survives Railway restarts.
 
-`run_auth()` — one-time browser OAuth flow. Saves `token.json`. Run via `uv run personal-agent-auth`.
+`run_auth()` — one-time browser OAuth flow. Run via `uv run personal-agent-auth`. Saves `token.json` locally.
 
 Scopes: `gmail.readonly`, `calendar.readonly` — read-only, no write access.
+
+---
+
+## GitHub storage
+
+`github_storage.py` reads and writes files to the private repo (`CCliff8/personal-agent-data`) via the GitHub REST API using `httpx`. Auth is via a fine-grained PAT stored in `DATA_REPO_TOKEN`.
+
+If `DATA_REPO_TOKEN` is unset or empty, all calls are silently skipped (no crash).
+
+Currently used for:
+- **Read on startup**: pull latest `token.json` from private repo (has the most recent refreshed token)
+- **Write after token refresh**: push updated `token.json` after every Google OAuth refresh
+
+Not yet used for: reflections, drafts, notes (saved to ephemeral Railway disk only).
+
+---
+
+## Railway startup
+
+On Railway the disk is ephemeral — no files survive a restart. `startup.py` handles this:
+
+1. `credentials.json` — decoded from `GOOGLE_CREDENTIALS_B64` env var on every startup
+2. `token.json` — pulled from private GitHub repo first (latest refreshed token); falls back to `GOOGLE_TOKEN_B64` env var if not found in the repo
+
+This runs before anything else in `main()`.
+
+---
+
+## Deployment
+
+The bot runs on [Railway](https://railway.app) connected to the public GitHub repo. Every push to `main` triggers an automatic redeploy.
+
+Build system: **Railpack** (Railway's builder). Detects Python + uv from `pyproject.toml`. Start command is defined in `railpack.json`.
+
+Python version is pinned to `3.11` via `.python-version`.
+
+Environment variables are set in Railway → service → Variables. They are never committed to the repo.
+
+---
+
+## Data persistence status
+
+| Data | Persisted? |
+|---|---|
+| `token.json` | Yes — private GitHub repo after every refresh |
+| `state.json` | Local disk — survives normal operation, lost on restart |
+| `reflections/` | Local disk only — **not yet persisted** |
+| `drafts/` | Local disk only — **not yet persisted** |
+| `Notes/` | Local disk only — **not yet persisted** |
+| Reminders | In-memory only — lost on restart |
