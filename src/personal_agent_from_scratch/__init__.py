@@ -14,6 +14,7 @@ from .skills import quiz
 from .skills import remind
 from .skills import chat
 from .skills import read as read_skill
+from .skills import schedule as schedule_skill
 
 
 SESSION_KEYS = {
@@ -21,11 +22,12 @@ SESSION_KEYS = {
     "read_title": "/read",
     "in_chat": "/chat",
     "awaiting_quiz_answer": "/testme",
+    "schedule_pending": "/schedule",
 }
 
 COMMANDS = {
     "/exit", "/brief", "/reflect", "/done", "/linkedin",
-    "/testme", "/remind", "/chat", "/read",
+    "/testme", "/remind", "/chat", "/read", "/schedule",
 }
 
 
@@ -222,6 +224,72 @@ def main() -> None:
         threading.Timer(seconds, fire).start()
         client.send_message(chat_id, f"Reminder set for {label}.")
 
+    # --- Schedule ---
+
+    def _complete_schedule(chat_id: int, fields: dict) -> None:
+        router.state.pop("schedule_pending", None)
+        router.state.pop("schedule_awaiting", None)
+        try:
+            confirmation = schedule_skill.create_event(fields)
+            client.send_message(chat_id, confirmation)
+        except Exception as e:
+            client.send_message(chat_id, f"Failed to create event: {e}")
+
+    @router.register(lambda msg: msg.get("text", "").lower().startswith("/schedule"))
+    def handle_schedule(message: dict, router) -> None:
+        chat_id = message["chat"]["id"]
+        if _busy(chat_id):
+            return
+        parts = message["text"].split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            client.send_message(chat_id, "Usage: /schedule <event> (e.g. /schedule tempo 8km thursday 18:00)")
+            return
+        fields = schedule_skill.extract(parts[1])
+        fields["duration_min"] = schedule_skill.calculate_duration(fields)
+        missing = schedule_skill.first_missing(fields)
+        if missing is None:
+            _complete_schedule(chat_id, fields)
+        else:
+            field_name, question = missing
+            router.state["schedule_pending"] = fields
+            router.state["schedule_awaiting"] = field_name
+            client.send_message(chat_id, question)
+
+    @router.register(lambda msg: bool(router.state.get("schedule_pending")) and bool(msg.get("text")) and not _is_command(msg["text"]))
+    def handle_schedule_answer(message: dict, router) -> None:
+        chat_id = message["chat"]["id"]
+        fields = router.state["schedule_pending"]
+        awaiting = router.state.get("schedule_awaiting")
+        text = message["text"].strip()
+
+        if awaiting == "date":
+            parsed = schedule_skill.parse_date(text)
+            if not parsed:
+                client.send_message(chat_id, "Couldn't parse that date. Try 'Thursday' or '2026-10-09'.")
+                return
+            fields["date"] = parsed
+        elif awaiting == "time":
+            parsed = schedule_skill.parse_time(text)
+            if not parsed:
+                client.send_message(chat_id, "Couldn't parse that time. Try '18:00' or '7am'.")
+                return
+            fields["time"] = parsed
+        elif awaiting == "duration_min":
+            parsed = schedule_skill.parse_duration(text)
+            if not parsed:
+                client.send_message(chat_id, "Couldn't parse that duration. Try '45min' or '1h30'.")
+                return
+            fields["duration_min"] = parsed
+
+        router.state["schedule_pending"] = fields
+        missing = schedule_skill.first_missing(fields)
+        if missing is None:
+            _complete_schedule(chat_id, fields)
+        else:
+            field_name, question = missing
+            router.state["schedule_awaiting"] = field_name
+            client.send_message(chat_id, question)
+
     print("Bot running. Press Ctrl-C to stop.")
 
     client.send_message(brief_chat_id,
@@ -234,6 +302,7 @@ def main() -> None:
         "/remind <message> in <time> — set a reminder (e.g. in 10m, 2h, 1d)\n"
         "/chat — start a conversation with Haiku (uses memory.md as context)\n"
         "/read <title> — start a reading note session, /done to save\n"
+        "/schedule <event> — create a calendar event (e.g. /schedule tempo 8km thursday 18:00)\n"
         "/exit — cancel any active session"
     )
 

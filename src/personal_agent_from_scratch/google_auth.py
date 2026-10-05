@@ -6,7 +6,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/calendar",
 ]
 
 CREDS_FILE = Path("credentials.json")
