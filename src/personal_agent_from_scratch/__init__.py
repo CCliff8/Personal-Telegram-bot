@@ -238,10 +238,11 @@ def main() -> None:
         fields = calendar_skill.extract_intent(parts[1])
 
         if fields.get("intent") == "delete":
-            query = fields.get("search_query") or fields.get("title") or parts[1]
+            query = fields.get("search_query") or fields.get("title") or None
             events = calendar_skill.search_events(query, fields.get("date"), fields.get("time"))
             if not events:
-                client.send_message(chat_id, "No matching events found.")
+                date_label = fields.get("date") or "the next 30 days"
+                client.send_message(chat_id, f"No events found for {date_label}.")
                 return
             if len(events) == 1:
                 event = events[0]
@@ -254,7 +255,7 @@ def main() -> None:
                 lines = "\n".join(f"{i+1}. {it['summary']}" for i, it in enumerate(items))
                 router.state["calendar_pending"] = {"mode": "delete_select", "events": items}
                 router.state["calendar_awaiting"] = "select_event"
-                client.send_message(chat_id, f"Multiple events found:\n{lines}\n\nReply with the number to delete.")
+                client.send_message(chat_id, f"Which event?\n{lines}\n\nReply with the number to delete.")
         else:
             missing = calendar_skill.first_missing(fields)
             if missing is None:

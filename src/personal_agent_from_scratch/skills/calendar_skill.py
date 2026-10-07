@@ -130,10 +130,13 @@ def search_events(query: str | None, date: str | None, time: str | None = None) 
     ).execute()
     events = result.get("items", [])
 
-    # Filter locally by title — case-insensitive substring match
+    # Filter locally by title — strip quotes, case-insensitive substring match
     if query:
-        query_lower = query.lower()
-        events = [e for e in events if query_lower in e.get("summary", "").lower()]
+        query_lower = query.strip("'\"").lower()
+        filtered = [e for e in events if query_lower in e.get("summary", "").lower()]
+        if filtered:
+            events = filtered
+        # If nothing matched, return all events so caller can show them
 
     # Narrow by time if provided
     if time and events:
