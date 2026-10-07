@@ -1,6 +1,6 @@
 # Personal Agent
 
-A personal Telegram bot powered by Claude Haiku. It runs 24/7 on Railway, connects to your Google account, and acts as a daily productivity assistant — morning briefs, evening reflections, LinkedIn drafts, reminders, quizzes, and a context-aware chat.
+A personal Telegram bot powered by Claude Haiku. It runs 24/7 on Railway, connects to your Google account, and acts as a daily productivity assistant — morning briefs, evening reflections, LinkedIn drafts, reminders, quizzes, calendar management, and a context-aware chat.
 
 Everything is manual and on-demand. No scheduled messages.
 
@@ -12,15 +12,15 @@ Everything is manual and on-demand. No scheduled messages.
 |---|---|
 | `/brief` | Morning brief: Milan weather, today's calendar events, unread Gmail — summarised by Haiku |
 | `/reflect` | Start an evening reflection. Answer 4 questions across multiple messages, send `/done` to save |
-| `/done` | Finish and save the current reflection or reading session |
 | `/linkedin` | Generate a learn-in-public LinkedIn post from your last 6 reflections |
 | `/testme <topic>` | Get quizzed on any topic. Haiku asks a question, you answer, Haiku evaluates |
 | `/remind <message> in <time>` | Set a one-shot reminder. Supports `10m`, `2h`, `1d` |
 | `/chat` | Multi-turn conversation with Haiku, loaded with your personal context from `memory.md` |
-| `/read <title>` | Dump notes across multiple messages, send `/done` to have Haiku structure and save them |
-| `/exit` | Cancel any active session |
+| `/notes <title>` | Dump notes across multiple messages, send `/done` to have Haiku structure and save them |
+| `/calendar <event>` | Create or delete a Google Calendar event using natural language |
+| `/done` | Save and finish the current session, or cancel it |
 
-Only one session-based command can run at a time. All others are blocked until you `/exit` or `/done`.
+Only one session-based command can run at a time. `/done` exits any active session.
 
 ---
 
@@ -69,7 +69,7 @@ ANTHROPIC_API_KEY=your_key_here
 uv run personal-agent-auth
 ```
 
-A browser window opens — log in and click Allow. This saves `token.json` locally. It auto-refreshes and never needs to be run again.
+A browser window opens — log in and click Allow. This saves `token.json` locally. It auto-refreshes and never needs to be run again unless scopes change.
 
 ### 4. Personal context
 
@@ -100,8 +100,8 @@ Railway runs the bot 24/7. Because Railway's disk is ephemeral (wiped on restart
 | Data | Where it lives |
 |---|---|
 | Secrets (API keys, tokens) | Railway environment variables |
-| Google OAuth token (refreshed periodically) | Private GitHub repo |
-| Reflections, drafts, notes | Railway disk (ephemeral — **not yet persisted**, see Known limitations) |
+| Google OAuth token | Private GitHub repo (updated after every refresh) |
+| Reflections, drafts, notes | Private GitHub repo (pushed after every save) |
 
 ### Steps
 
@@ -136,8 +136,16 @@ base64 -i token.json | tr -d '\n'
 
 ---
 
+## Security notes
+
+- Never paste your bot token in chat or logs — it appears in Telegram API URLs and gives full bot control
+- All secrets live in Railway env vars only, never in code or git history
+- `memory.md`, `token.json`, and `credentials.json` are gitignored
+- The private GitHub repo stores personal data; the public repo contains only code
+
+---
+
 ## Known limitations
 
-- **Reflections, drafts, and notes are not yet persisted** to the private GitHub repo. They survive normal operation but are lost if Railway restarts the container. This will be fixed in a future update.
 - **Reminders are lost on restart.** They run in-memory and are not persisted.
-- The bot is single-user by design. To use it with others, they need to deploy their own instance.
+- The bot is single-user by design. To share it, others need to deploy their own instance.
