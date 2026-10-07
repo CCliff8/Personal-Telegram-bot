@@ -247,11 +247,11 @@ def main() -> None:
             if len(events) == 1:
                 event = events[0]
                 summary = calendar_skill.format_event(event)
-                router.state["calendar_pending"] = {"mode": "delete_confirm", "event_id": event["id"], "summary": summary}
+                router.state["calendar_pending"] = {"mode": "delete_confirm", "event_id": event["id"], "calendar_id": event.get("_calendarId", "primary"), "summary": summary}
                 router.state["calendar_awaiting"] = "confirm_delete"
                 client.send_message(chat_id, f"Delete: {summary}\n\nReply yes to confirm.")
             else:
-                items = [{"id": e["id"], "summary": calendar_skill.format_event(e)} for e in events[:5]]
+                items = [{"id": e["id"], "calendar_id": e.get("_calendarId", "primary"), "summary": calendar_skill.format_event(e)} for e in events[:5]]
                 lines = "\n".join(f"{i+1}. {it['summary']}" for i, it in enumerate(items))
                 router.state["calendar_pending"] = {"mode": "delete_select", "events": items}
                 router.state["calendar_awaiting"] = "select_event"
@@ -280,7 +280,7 @@ def main() -> None:
             router.state.pop("calendar_awaiting", None)
             if text.lower() in ("yes", "y", "si", "sì"):
                 try:
-                    calendar_skill.delete_event(pending["event_id"])
+                    calendar_skill.delete_event(pending["event_id"], pending.get("calendar_id", "primary"))
                     client.send_message(chat_id, f"Deleted: {pending['summary']}")
                 except Exception as e:
                     client.send_message(chat_id, f"Failed to delete: {e}")

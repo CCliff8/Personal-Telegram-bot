@@ -120,15 +120,29 @@ def search_events(query: str | None, date: str | None, time: str | None = None) 
         start = now
         end = now + timedelta(days=30)
 
-    result = service.events().list(
-        calendarId="primary",
-        timeMin=start.isoformat(),
-        timeMax=end.isoformat(),
-        singleEvents=True,
-        orderBy="startTime",
-        maxResults=50,
-    ).execute()
-    events = result.get("items", [])
+    # Collect events from all writable calendars
+    cal_list = service.calendarList().list().execute()
+    calendar_ids = [
+        cal["id"] for cal in cal_list.get("items", [])
+        if cal.get("accessRole") in ("owner", "writer")
+    ]
+
+    events = []
+    for cal_id in calendar_ids:
+        try:
+            result = service.events().list(
+                calendarId=cal_id,
+                timeMin=start.isoformat(),
+                timeMax=end.isoformat(),
+                singleEvents=True,
+                orderBy="startTime",
+                maxResults=50,
+            ).execute()
+            for e in result.get("items", []):
+                e["_calendarId"] = cal_id
+            events.extend(result.get("items", []))
+        except Exception:
+            continue
 
     # Filter locally by title — strip quotes, case-insensitive substring match
     if query:
@@ -164,7 +178,7 @@ def format_event(event: dict) -> str:
         return event.get("summary", "Untitled")
 
 
-def delete_event(event_id: str) -> None:
+def delete_event(event_id: str, calendar_id: str = "primary") -> None:
     creds = get_credentials()
     service = build("calendar", "v3", credentials=creds)
-    service.events().delete(calendarId="primary", eventId=event_id).execute()
+    service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
