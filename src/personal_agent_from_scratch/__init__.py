@@ -239,7 +239,7 @@ def main() -> None:
 
         if fields.get("intent") == "delete":
             query = fields.get("search_query") or fields.get("title") or parts[1]
-            events = calendar_skill.search_events(query, fields.get("date"))
+            events = calendar_skill.search_events(query, fields.get("date"), fields.get("time"))
             if not events:
                 client.send_message(chat_id, "No matching events found.")
                 return

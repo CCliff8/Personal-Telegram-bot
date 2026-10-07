@@ -108,7 +108,7 @@ def create_event(fields: dict) -> str:
     return f"Created: {fields['title']} — {day}, {fields['time']}–{end_dt.strftime('%H:%M')}"
 
 
-def search_events(query: str, date: str | None) -> list:
+def search_events(query: str | None, date: str | None, time: str | None = None) -> list:
     creds = get_credentials()
     service = build("calendar", "v3", credentials=creds)
 
@@ -124,11 +124,32 @@ def search_events(query: str, date: str | None) -> list:
         calendarId="primary",
         timeMin=start.isoformat(),
         timeMax=end.isoformat(),
-        q=query,
         singleEvents=True,
         orderBy="startTime",
+        maxResults=50,
     ).execute()
-    return result.get("items", [])
+    events = result.get("items", [])
+
+    # Filter locally by title — case-insensitive substring match
+    if query:
+        query_lower = query.lower()
+        events = [e for e in events if query_lower in e.get("summary", "").lower()]
+
+    # Narrow by time if provided
+    if time and events:
+        try:
+            target_h, target_m = map(int, time.split(":"))
+            by_time = [
+                e for e in events
+                if (dt := datetime.fromisoformat(e["start"].get("dateTime", "")).astimezone(MILAN))
+                and dt.hour == target_h and dt.minute == target_m
+            ]
+            if by_time:
+                events = by_time
+        except Exception:
+            pass
+
+    return events
 
 
 def format_event(event: dict) -> str:
