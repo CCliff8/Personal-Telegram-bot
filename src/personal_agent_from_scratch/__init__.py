@@ -14,7 +14,7 @@ from .skills import quiz
 from .skills import remind
 from .skills import chat
 from .skills import read as read_skill
-from .skills import schedule as schedule_skill
+from .skills import calendar_skill
 
 
 SESSION_KEYS = {
@@ -22,12 +22,12 @@ SESSION_KEYS = {
     "read_title": "/read",
     "in_chat": "/chat",
     "awaiting_quiz_answer": "/testme",
-    "schedule_pending": "/schedule",
+    "calendar_pending": "/calendar",
 }
 
 COMMANDS = {
     "/exit", "/brief", "/reflect", "/done", "/linkedin",
-    "/testme", "/remind", "/chat", "/read", "/schedule",
+    "/testme", "/remind", "/chat", "/read", "/calendar",
 }
 
 
@@ -224,71 +224,102 @@ def main() -> None:
         threading.Timer(seconds, fire).start()
         client.send_message(chat_id, f"Reminder set for {label}.")
 
-    # --- Schedule ---
+    # --- Calendar ---
 
-    def _complete_schedule(chat_id: int, fields: dict) -> None:
-        router.state.pop("schedule_pending", None)
-        router.state.pop("schedule_awaiting", None)
-        try:
-            confirmation = schedule_skill.create_event(fields)
-            client.send_message(chat_id, confirmation)
-        except Exception as e:
-            client.send_message(chat_id, f"Failed to create event: {e}")
-
-    @router.register(lambda msg: msg.get("text", "").lower().startswith("/schedule"))
-    def handle_schedule(message: dict, router) -> None:
+    @router.register(lambda msg: msg.get("text", "").lower().startswith("/calendar"))
+    def handle_calendar(message: dict, router) -> None:
         chat_id = message["chat"]["id"]
         if _busy(chat_id):
             return
         parts = message["text"].split(maxsplit=1)
         if len(parts) < 2 or not parts[1].strip():
-            client.send_message(chat_id, "Usage: /schedule <event> (e.g. /schedule tempo 8km thursday 18:00)")
+            client.send_message(chat_id, "Usage: /calendar <event> — e.g. /calendar meeting tomorrow 10am 1h")
             return
-        fields = schedule_skill.extract(parts[1])
-        fields["duration_min"] = schedule_skill.calculate_duration(fields)
-        missing = schedule_skill.first_missing(fields)
-        if missing is None:
-            _complete_schedule(chat_id, fields)
-        else:
-            field_name, question = missing
-            router.state["schedule_pending"] = fields
-            router.state["schedule_awaiting"] = field_name
-            client.send_message(chat_id, question)
+        fields = calendar_skill.extract_intent(parts[1])
 
-    @router.register(lambda msg: bool(router.state.get("schedule_pending")) and bool(msg.get("text")) and not _is_command(msg["text"]))
-    def handle_schedule_answer(message: dict, router) -> None:
+        if fields.get("intent") == "delete":
+            query = fields.get("search_query") or fields.get("title") or parts[1]
+            events = calendar_skill.search_events(query, fields.get("date"))
+            if not events:
+                client.send_message(chat_id, "No matching events found.")
+                return
+            if len(events) == 1:
+                event = events[0]
+                summary = calendar_skill.format_event(event)
+                router.state["calendar_pending"] = {"mode": "delete_confirm", "event_id": event["id"], "summary": summary}
+                router.state["calendar_awaiting"] = "confirm_delete"
+                client.send_message(chat_id, f"Delete: {summary}\n\nReply yes to confirm.")
+            else:
+                items = [{"id": e["id"], "summary": calendar_skill.format_event(e)} for e in events[:5]]
+                lines = "\n".join(f"{i+1}. {it['summary']}" for i, it in enumerate(items))
+                router.state["calendar_pending"] = {"mode": "delete_select", "events": items}
+                router.state["calendar_awaiting"] = "select_event"
+                client.send_message(chat_id, f"Multiple events found:\n{lines}\n\nReply with the number to delete.")
+        else:
+            missing = calendar_skill.first_missing(fields)
+            if missing is None:
+                try:
+                    client.send_message(chat_id, calendar_skill.create_event(fields))
+                except Exception as e:
+                    client.send_message(chat_id, f"Failed to create event: {e}")
+            else:
+                field_name, question = missing
+                router.state["calendar_pending"] = {"mode": "create", **fields}
+                router.state["calendar_awaiting"] = field_name
+                client.send_message(chat_id, question)
+
+    @router.register(lambda msg: bool(router.state.get("calendar_pending")) and bool(msg.get("text")) and not _is_command(msg["text"]))
+    def handle_calendar_answer(message: dict, router) -> None:
         chat_id = message["chat"]["id"]
-        fields = router.state["schedule_pending"]
-        awaiting = router.state.get("schedule_awaiting")
+        pending = router.state["calendar_pending"]
         text = message["text"].strip()
 
-        if awaiting == "date":
-            parsed = schedule_skill.parse_date(text)
-            if not parsed:
-                client.send_message(chat_id, "Couldn't parse that date. Try 'Thursday' or '2026-10-09'.")
-                return
-            fields["date"] = parsed
-        elif awaiting == "time":
-            parsed = schedule_skill.parse_time(text)
-            if not parsed:
-                client.send_message(chat_id, "Couldn't parse that time. Try '18:00' or '7am'.")
-                return
-            fields["time"] = parsed
-        elif awaiting == "duration_min":
-            parsed = schedule_skill.parse_duration(text)
-            if not parsed:
-                client.send_message(chat_id, "Couldn't parse that duration. Try '45min' or '1h30'.")
-                return
-            fields["duration_min"] = parsed
+        if pending["mode"] == "delete_confirm":
+            router.state.pop("calendar_pending", None)
+            router.state.pop("calendar_awaiting", None)
+            if text.lower() in ("yes", "y", "si", "sì"):
+                try:
+                    calendar_skill.delete_event(pending["event_id"])
+                    client.send_message(chat_id, f"Deleted: {pending['summary']}")
+                except Exception as e:
+                    client.send_message(chat_id, f"Failed to delete: {e}")
+            else:
+                client.send_message(chat_id, "Cancelled.")
 
-        router.state["schedule_pending"] = fields
-        missing = schedule_skill.first_missing(fields)
-        if missing is None:
-            _complete_schedule(chat_id, fields)
-        else:
-            field_name, question = missing
-            router.state["schedule_awaiting"] = field_name
-            client.send_message(chat_id, question)
+        elif pending["mode"] == "delete_select":
+            try:
+                idx = int(text) - 1
+                events = pending["events"]
+                if 0 <= idx < len(events):
+                    event = events[idx]
+                    router.state["calendar_pending"] = {"mode": "delete_confirm", "event_id": event["id"], "summary": event["summary"]}
+                    router.state["calendar_awaiting"] = "confirm_delete"
+                    client.send_message(chat_id, f"Delete: {event['summary']}\n\nReply yes to confirm.")
+                else:
+                    client.send_message(chat_id, f"Reply with a number between 1 and {len(events)}.")
+            except ValueError:
+                client.send_message(chat_id, "Reply with a number.")
+
+        elif pending["mode"] == "create":
+            awaiting = router.state.get("calendar_awaiting")
+            parsed = calendar_skill.parse_field(awaiting, text)
+            if not parsed:
+                client.send_message(chat_id, "Couldn't parse that, try again.")
+                return
+            pending[awaiting] = parsed
+            router.state["calendar_pending"] = pending
+            missing = calendar_skill.first_missing(pending)
+            if missing is None:
+                router.state.pop("calendar_pending", None)
+                router.state.pop("calendar_awaiting", None)
+                try:
+                    client.send_message(chat_id, calendar_skill.create_event(pending))
+                except Exception as e:
+                    client.send_message(chat_id, f"Failed to create event: {e}")
+            else:
+                field_name, question = missing
+                router.state["calendar_awaiting"] = field_name
+                client.send_message(chat_id, question)
 
     print("Bot running. Press Ctrl-C to stop.")
 
@@ -302,7 +333,7 @@ def main() -> None:
         "/remind <message> in <time> — set a reminder (e.g. in 10m, 2h, 1d)\n"
         "/chat — start a conversation with Haiku (uses memory.md as context)\n"
         "/read <title> — start a reading note session, /done to save\n"
-        "/schedule <event> — create a calendar event (e.g. /schedule tempo 8km thursday 18:00)\n"
+        "/calendar <event> — create or delete a calendar event\n"
         "/exit — cancel any active session"
     )
 
