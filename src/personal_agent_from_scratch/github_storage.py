@@ -24,7 +24,7 @@ def read_file(path: str) -> Optional[bytes]:
     if not _token_available():
         return None
     resp = httpx.get(f"{API_BASE}/{path}", headers=_headers(), timeout=10)
-    if resp.status_code == 404:
+    if resp.status_code in (404, 401, 403):
         return None
     resp.raise_for_status()
     return base64.b64decode(resp.json()["content"])
@@ -34,7 +34,7 @@ def list_files(path: str) -> list:
     if not _token_available():
         return []
     resp = httpx.get(f"{API_BASE}/{path}", headers=_headers(), timeout=10)
-    if resp.status_code == 404:
+    if resp.status_code in (404, 401, 403):
         return []
     resp.raise_for_status()
     return [item["path"] for item in resp.json() if item["type"] == "file"]
