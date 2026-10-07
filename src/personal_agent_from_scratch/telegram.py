@@ -1,3 +1,4 @@
+import time
 from typing import List, Optional
 import httpx
 
@@ -16,6 +17,10 @@ class TelegramClient:
             params=params,
             timeout=timeout + 5,
         )
+        if resp.status_code == 409:
+            # Another instance is already polling — wait for it to shut down
+            time.sleep(5)
+            return []
         resp.raise_for_status()
         return resp.json()["result"]
 
