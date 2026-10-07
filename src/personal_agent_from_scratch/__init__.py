@@ -19,15 +19,15 @@ from .skills import calendar_skill
 
 SESSION_KEYS = {
     "awaiting_reflection": "/reflect",
-    "read_title": "/read",
+    "read_title": "/notes",
     "in_chat": "/chat",
     "awaiting_quiz_answer": "/testme",
     "calendar_pending": "/calendar",
 }
 
 COMMANDS = {
-    "/exit", "/brief", "/reflect", "/done", "/linkedin",
-    "/testme", "/remind", "/chat", "/read", "/calendar",
+    "/brief", "/reflect", "/done", "/linkedin",
+    "/testme", "/remind", "/chat", "/notes", "/calendar",
 }
 
 
@@ -57,16 +57,9 @@ def main() -> None:
     def _busy(chat_id: int) -> bool:
         session = _active_session(router.state)
         if session:
-            client.send_message(chat_id, f"You're in a {session} session. Send /exit first.")
+            client.send_message(chat_id, f"You're in a {session} session. Send /done to exit.")
             return True
         return False
-
-    # --- /exit (always first) ---
-
-    @router.register(lambda msg: msg.get("text", "").startswith("/exit"))
-    def handle_exit(message: dict, router) -> None:
-        router.state.clear()
-        client.send_message(message["chat"]["id"], "Cancelled.")
 
     # --- Morning brief ---
 
@@ -109,23 +102,23 @@ def main() -> None:
     def handle_reflection_input(message: dict, router) -> None:
         reflection.accumulate(router.state, message["text"])
 
-    # --- /read ---
+    # --- /notes ---
 
-    @router.register(lambda msg: msg.get("text", "").lower().startswith("/read"))
-    def handle_read(message: dict, router) -> None:
+    @router.register(lambda msg: msg.get("text", "").lower().startswith("/notes"))
+    def handle_notes(message: dict, router) -> None:
         if _busy(message["chat"]["id"]):
             return
         parts = message["text"].split(maxsplit=1)
         if len(parts) < 2 or not parts[1].strip():
-            client.send_message(message["chat"]["id"], "Usage: /read <title>")
+            client.send_message(message["chat"]["id"], "Usage: /notes <title>")
             return
         title = parts[1].strip()
         router.state["read_title"] = title
         router.state["read_messages"] = []
-        client.send_message(message["chat"]["id"], f"Reading session started: {title}\nDump your notes. Send /done when finished.")
+        client.send_message(message["chat"]["id"], f"Notes session started: {title}\nDump your notes. Send /done when finished.")
 
     @router.register(lambda msg: msg.get("text", "").startswith("/done") and bool(router.state.get("read_title")))
-    def handle_done_read(message: dict, router) -> None:
+    def handle_done_notes(message: dict, router) -> None:
         title = router.state.pop("read_title", "")
         notes = router.state.pop("read_messages", [])
         if not notes:
@@ -137,7 +130,7 @@ def main() -> None:
         client.send_message(message["chat"]["id"], structured)
 
     @router.register(lambda msg: bool(router.state.get("read_title")) and bool(msg.get("text")) and not _is_command(msg["text"]))
-    def handle_read_input(message: dict, router) -> None:
+    def handle_notes_input(message: dict, router) -> None:
         router.state["read_messages"].append(message["text"])
 
     # --- /chat ---
@@ -153,7 +146,7 @@ def main() -> None:
             response = chat.reply(router.state["chat_history"], parts[1].strip())
             client.send_message(message["chat"]["id"], response)
         else:
-            client.send_message(message["chat"]["id"], "Chat started. Send /exit to end.")
+            client.send_message(message["chat"]["id"], "Chat started. Send /done to end.")
 
     @router.register(lambda msg: router.state.get("in_chat") and bool(msg.get("text")) and not _is_command(msg["text"]))
     def handle_chat_message(message: dict, router) -> None:
@@ -293,7 +286,7 @@ def main() -> None:
                 events = pending["events"]
                 if 0 <= idx < len(events):
                     event = events[idx]
-                    router.state["calendar_pending"] = {"mode": "delete_confirm", "event_id": event["id"], "summary": event["summary"]}
+                    router.state["calendar_pending"] = {"mode": "delete_confirm", "event_id": event["id"], "calendar_id": event.get("calendar_id", "primary"), "summary": event["summary"]}
                     router.state["calendar_awaiting"] = "confirm_delete"
                     client.send_message(chat_id, f"Delete: {event['summary']}\n\nReply yes to confirm.")
                 else:
@@ -322,20 +315,26 @@ def main() -> None:
                 router.state["calendar_awaiting"] = field_name
                 client.send_message(chat_id, question)
 
+    # --- /done fallback: exit any remaining active session ---
+
+    @router.register(lambda msg: msg.get("text", "").startswith("/done"))
+    def handle_done_fallback(message: dict, router) -> None:
+        router.state.clear()
+        client.send_message(message["chat"]["id"], "Done.")
+
     print("Bot running. Press Ctrl-C to stop.")
 
     client.send_message(brief_chat_id,
         "Agent online.\n\n"
         "/brief — morning brief (weather, calendar, email)\n"
         "/reflect — start evening reflection\n"
-        "/done — save and finish reflection or reading session\n"
         "/linkedin — generate LinkedIn draft from last 6 reflections\n"
         "/testme <topic> — get quizzed on any topic\n"
         "/remind <message> in <time> — set a reminder (e.g. in 10m, 2h, 1d)\n"
         "/chat — start a conversation with Haiku (uses memory.md as context)\n"
-        "/read <title> — start a reading note session, /done to save\n"
+        "/notes <title> — start a note-taking session, /done to save\n"
         "/calendar <event> — create or delete a calendar event\n"
-        "/exit — cancel any active session"
+        "/done — save and finish current session, or cancel"
     )
 
     offset: Optional[int] = None
