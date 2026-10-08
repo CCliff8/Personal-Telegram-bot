@@ -332,7 +332,7 @@ def main() -> None:
         "/testme <topic> — get quizzed on any topic\n"
         "/remind <message> in <time> — set a reminder (e.g. in 10m, 2h, 1d)\n"
         "/chat — start a conversation with Haiku (uses memory.md as context)\n"
-        "/notes <title> — start a note-taking session, /done to save\n"
+        "/notes <title> — start a note-taking session\n"
         "/calendar <event> — create or delete a calendar event\n"
         "/done — save and finish current session, or cancel"
     )

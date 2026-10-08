@@ -16,7 +16,7 @@ Everything is manual and on-demand. No scheduled messages.
 | `/testme <topic>` | Get quizzed on any topic. Haiku asks a question, you answer, Haiku evaluates |
 | `/remind <message> in <time>` | Set a one-shot reminder. Supports `10m`, `2h`, `1d` |
 | `/chat` | Multi-turn conversation with Haiku, loaded with your personal context from `memory.md` |
-| `/notes <title>` | Dump notes across multiple messages, send `/done` to have Haiku structure and save them |
+| `/notes <title>` | Dump notes across multiple messages. Links are listed, prose is reorganised — no summaries. Send `/done` to save. |
 | `/calendar <event>` | Create or delete a Google Calendar event using natural language |
 | `/done` | Save and finish the current session, or cancel it |
 

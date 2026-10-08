@@ -10,18 +10,15 @@ NOTES_DIR = Path("Notes")
 
 def structure(title: str, raw_notes: str) -> str:
     prompt = (
-        f"Organise these raw reading notes into a clean structured note.\n\n"
+        f"Organise these raw notes into a clean structured note.\n\n"
         f"Title: {title}\n\n"
-        "Use this template:\n"
-        f"# {title}\n\n"
-        "## Summary\n"
-        "<concise summary of the main ideas>\n\n"
-        "## Key Concepts\n"
-        "<bullet list of key concepts, definitions, or takeaways>\n\n"
         "Rules:\n"
-        "- Keep the author's own words where they are precise\n"
-        "- If the notes mention something to deep dive, add a ## To Explore section\n"
-        "- No filler, no padding\n\n"
+        "- NEVER write a summary — preserve and reorganise the original content, do not paraphrase\n"
+        "- If the notes contain links or URLs: format as a bullet list, one item per link, with any context the user wrote next to it\n"
+        "- If the notes are prose or concepts: reorganise into ## sections with bullet points, keep the author's own words\n"
+        "- If something to explore is mentioned, add a ## To Explore section\n"
+        "- Start with # {title}, then the content — nothing else before it\n"
+        "- No filler, no padding, no summaries\n\n"
         f"RAW NOTES:\n{raw_notes}"
     )
     client = anthropic.Anthropic()
